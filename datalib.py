@@ -14,7 +14,7 @@ def generate_GP_data(t_max=10, dt=0.01, d_latent=3, l=1, normalize=True, fname=N
         dt (float): Time step size.
         d_latent (int): Dimensionality of the latent trajectory.
         l (float): Lengthscale parameter for the RBF kernel.
-        normalize (bool): Flag indicating whether to normalize the latent trajectory.
+        normalize (bool): Flag indicating whether to normalize the latent trajectory. (zero mean, unit variance)
         fname (str): File name to save the latent trajectory (optional).
 
     Returns:
