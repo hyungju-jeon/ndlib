@@ -26,6 +26,7 @@ def generate_GP_data(t_max=10, dt=0.01, d_latent=3, l=1, normalize=True, fname=N
 
     # Define a kernel with default parameters.
     kernel = gpytorch.kernels.RBFKernel()
+    # Updating kernel lengthscale
     kernel.lengthscale = l * dt
     gp = gpytorch.distributions.MultivariateNormal(
         torch.zeros(nT), kernel(index_points)
