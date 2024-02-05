@@ -9,29 +9,9 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 
 from utils.ndlib.misclib import Timer
 from utils.ndlib.vislib import *
-
-
-import pyautogui
-
-curs_x_max, curs_y_max = pyautogui.size()
+from utils.ndlib.misclib import get_cursor_pos
 
 torch.set_default_dtype(torch.double)
-pyautogui.FAILSAFE = False
-pyautogui.DARWIN_CATCH_UP_TIME = 1e-3
-
-
-def get_cursor_pos():
-    """
-    Returns the current position of the mouse cursor.
-
-    Returns:
-        tuple: A tuple containing the x and y coordinates of the mouse cursor.
-    """
-    coords = pyautogui.position()
-    # center and normalize
-    coords = 2 * np.array(coords) / np.array([curs_x_max, curs_y_max]) - 1
-
-    return coords
 
 
 # %% Dynamical system classes
@@ -257,14 +237,15 @@ class TwoLimitCycle(DynamicalSystem):
         theta' = w
     """
 
-    def __init__(self, x0, d, w, Q, dt, y0=None, C=None, R=None):
+    def __init__(self, ref_cycle, perturb_cycle, dt=None, y0=None, C=None, R=None):
         """
         Initialize a dynamical system.
 
         """
+        x0 = torch.cat([ref_cycle.get_state(), perturb_cycle.get_state()])
         super().__init__(x0, dt)
-        self.ref_cycle = LimitCycle(x0[:2], d, w, Q, dt)
-        self.pert_cycle = LimitCycle(x0[2:], d, w, Q, dt)
+        self.reference = ref_cycle
+        self.perturb = perturb_cycle
 
     def update_state(self, u=0):
         """
@@ -273,8 +254,8 @@ class TwoLimitCycle(DynamicalSystem):
         Returns:
         - None
         """
-        self.ref_cycle.update_state()
-        self.pert_cycle.update_state(u)
+        self.reference.update_state()
+        self.perturb.update_state(u)
 
     def get_state(self):
         """
@@ -283,10 +264,10 @@ class TwoLimitCycle(DynamicalSystem):
         Returns:
         - x: torch tensor, the state of the dynamical system.
         """
-        return torch.cat([self.ref_cycle.get_state(), self.pert_cycle.get_state()])
+        return torch.cat([self.reference.get_state(), self.perturb.get_state()])
 
     def get_phase_diff(self):
-        return (self.ref_cycle.theta - self.pert_cycle.theta) % (2 * np.pi)
+        return (self.reference.theta - self.perturb.theta) % (2 * np.pi)
 
 
 # %% Observation model classes
@@ -317,22 +298,17 @@ class LinearObservation(ObservationModel):
 # %%
 if __name__ == "__main__":
     obs_noise = 1e-4
-    # limC = LimitCycle(
-    #     x0=torch.tensor([1.5, 0]),
-    #     d=1,
-    #     w=1,
-    #     Q=torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
-    #     dt=1e-2,
-    # )
-    # traj = limC.generate_trajectory(10000)
+    cycle_info = {
+        "x0": torch.tensor([1.5, 0]),
+        "d": 1,
+        "w": 0.5,
+        "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
+        "dt": 1e-2,
+    }
+    reference_cycle = LimitCycle(**cycle_info)
+    perturb_cycle = LimitCycle(**cycle_info)
+    twoC = TwoLimitCycle(reference_cycle, perturb_cycle, dt=1e-2)
 
-    twoC = TwoLimitCycle(
-        x0=torch.tensor([1.5, 0, 1.5, 0]),
-        d=1,
-        w=0.1,
-        Q=torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
-        dt=1e-2,
-    )
     traj = np.zeros((200, 4))
     phase = np.zeros((200, 2))
     fig = plt.figure(figsize=(9, 3))
@@ -355,7 +331,6 @@ if __name__ == "__main__":
         ax=ax_perturb,
         **plot_info,
         title="Perturbed trajectory",
-        alpha=0.1,
     )
 
     phaseTraj = BlitPlot(
