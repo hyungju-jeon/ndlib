@@ -2,7 +2,6 @@
 """
 library for Dynamical system
 """
-from re import T
 import torch
 from matplotlib import pyplot as plt
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -188,7 +187,7 @@ class LinearDynamics(DynamicalSystem):
         )
 
 
-class LimitCycle(DynamicalSystem):
+class LimitCircle(DynamicalSystem):
     """
     Class representing a limit cycle dynamical system inherting from the dynamicalSystem class.
     state :
@@ -270,6 +269,75 @@ class TwoLimitCycle(DynamicalSystem):
         return (self.reference.theta - self.perturb.theta) % (2 * np.pi)
 
 
+class VanDerPol(DynamicalSystem):
+    """
+    Class representing a Van der Pol dynamical system inherting from the dynamicalSystem class.
+    state :
+        x = [x, y]
+        x' = y
+        y' = mu(1 - x^2)y - x
+    """
+
+    def __init__(self, x0, mu, Q, dt, y0=None, C=None, R=None):
+        """
+        Initialize a dynamical system.
+
+        """
+        super().__init__(x0, dt)
+        self.mu = mu
+        self.Q = Q
+
+    def update_state(self, u=0):
+        """
+        Update the state of the dynamical system.
+
+        Returns:
+        - None
+        """
+        self.x = (
+            self.x
+            + self.dt
+            * torch.tensor(
+                [self.x[1], self.mu * (1 - self.x[0] ** 2) * self.x[1] - self.x[0]]
+            )
+            + MultivariateNormal(torch.zeros(self.n), self.Q).sample()
+        )
+
+
+class RingLimitCycle(DynamicalSystem):
+    """
+    Class representing a torus dynamical system inherting from the dynamicalSystem class.
+    state :
+        x = [x, y, z]
+        theta' = 0
+        phi' = w1
+        d = d
+    """
+
+    def __init__(self, x0, w2, Q, dt, y0=None, C=None, R=None):
+        """
+        Initialize a dynamical system.
+
+        """
+        super().__init__(x0, dt)
+        self.w1 = w1
+        self.w2 = w2
+        self.Q = Q
+
+    def update_state(self):
+        """
+        Update the state of the dynamical system.
+
+        Returns:
+        - None
+        """
+        self.x = (
+            self.x
+            + self.dt * torch.tensor([self.w1, self.w2])
+            + MultivariateNormal(torch.zeros(self.n), self.Q).sample()
+        )
+
+
 # %% Observation model classes
 class ObservationModel:
     def __init__(self):
@@ -297,16 +365,25 @@ class LinearObservation(ObservationModel):
 
 # %%
 if __name__ == "__main__":
+    # cycle_info = {
+    #     "x0": torch.tensor([1.5, 0]),
+    #     "d": 1,
+    #     "w": 0.5,
+    #     "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
+    #     "dt": 1e-2,
+    # }
+    # reference_cycle = LimitCircle(**cycle_info)
+    # perturb_cycle = LimitCircle(**cycle_info)
+
     obs_noise = 1e-4
     cycle_info = {
         "x0": torch.tensor([1.5, 0]),
-        "d": 1,
-        "w": 0.5,
+        "mu": 1,
         "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
         "dt": 1e-2,
     }
-    reference_cycle = LimitCycle(**cycle_info)
-    perturb_cycle = LimitCycle(**cycle_info)
+    reference_cycle = VanDerPol(**cycle_info)
+    perturb_cycle = VanDerPol(**cycle_info)
     twoC = TwoLimitCycle(reference_cycle, perturb_cycle, dt=1e-2)
 
     traj = np.zeros((200, 4))
