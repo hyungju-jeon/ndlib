@@ -2,6 +2,7 @@
 """
 library for Dynamical system
 """
+import re
 import torch
 from matplotlib import pyplot as plt
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -236,13 +237,18 @@ class TwoLimitCycle(DynamicalSystem):
         theta' = w
     """
 
-    def __init__(self, ref_cycle, perturb_cycle, dt=None, y0=None, C=None, R=None):
+    def __init__(self, ref_cycle, perturb_cycle, y0=None, C=None, R=None):
         """
         Initialize a dynamical system.
 
         """
+        if ref_cycle.dt != perturb_cycle.dt:
+            raise ValueError(
+                "Reference cycle and perturb cycle must have the same time step (dt)."
+            )
+
         x0 = torch.cat([ref_cycle.get_state(), perturb_cycle.get_state()])
-        super().__init__(x0, dt)
+        super().__init__(x0, ref_cycle.dt)
         self.reference = ref_cycle
         self.perturb = perturb_cycle
 
@@ -314,14 +320,33 @@ class RingLimitCycle(DynamicalSystem):
         d = d
     """
 
-    def __init__(self, x0, w2, Q, dt, y0=None, C=None, R=None):
+    def __init__(self, x0, d_r, d_p, w, Q, dt, y0=None, C=None, R=None):
         """
         Initialize a dynamical system.
 
+        Args:
+            x0 (torch.Tensor): The initial state of the system. [x, y, z]
+            w (float): The value of w.
+            Q (torch.Tensor): The value of Q.
+            dt (float): The time step size.
+            y0 (torch.Tensor, optional): The initial output of the system. Defaults to None.
+            C (torch.Tensor, optional): The value of C. Defaults to None.
+            R (torch.Tensor, optional): The value of R. Defaults to None.
         """
         super().__init__(x0, dt)
-        self.w1 = w1
-        self.w2 = w2
+        self.reference = LimitCircle(x0=x0[:2], d=d_r, w=0, Q=Q, dt=dt)
+        self.perturb = LimitCircle(x0=x0[2:], d=d_p, w=w, Q=Q, dt=dt)
+        cycle_info = {
+            "x0": torch.tensor([1.5, 0]),
+            "d": 1,
+            "w": 0.5,
+            "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
+            "dt": 1e-2,
+        }
+        self.reference = LimitCircle(**cycle_info)
+        self.perturb = LimitCircle(**cycle_info)
+        super().__init__(x0, dt)
+        self.w = w
         self.Q = Q
 
     def update_state(self):
@@ -386,8 +411,8 @@ if __name__ == "__main__":
     perturb_cycle = VanDerPol(**cycle_info)
     twoC = TwoLimitCycle(reference_cycle, perturb_cycle, dt=1e-2)
 
-    traj = np.zeros((200, 4))
-    phase = np.zeros((200, 2))
+    TRAJECTORY_1 = np.zeros((200, 4))
+    PHASE_1 = np.zeros((200, 2))
     fig = plt.figure(figsize=(9, 3))
     ax_ref = fig.add_subplot(1, 3, 1)
     ax_perturb = fig.add_subplot(1, 3, 2)
@@ -428,18 +453,18 @@ if __name__ == "__main__":
         else:
             twoC.update_state(0)
         if i < 200:
-            traj[i, :] = twoC.get_state()
-            phase_diff = twoC.get_phase_diff()
-            phase[i, :] = [np.cos(phase_diff), np.sin(phase_diff)]
+            TRAJECTORY_1[i, :] = twoC.get_state()
+            PHASE_DIFF = twoC.get_phase_diff()
+            PHASE_1[i, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
         else:
-            traj[0, :] = twoC.get_state()
-            traj = np.roll(traj, -1, axis=0)
-            phase_diff = twoC.get_phase_diff()
-            phase[0, :] = [np.cos(phase_diff), np.sin(phase_diff)]
-            phase = np.roll(phase, -1, axis=0)
+            TRAJECTORY_1[0, :] = twoC.get_state()
+            TRAJECTORY_1 = np.roll(TRAJECTORY_1, -1, axis=0)
+            PHASE_DIFF = twoC.get_phase_diff()
+            PHASE_1[0, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
+            PHASE_1 = np.roll(PHASE_1, -1, axis=0)
 
-            refTraj.refresh(traj[:, :2])
-            pertTraj.refresh(traj[:, 2:])
-            phaseTraj.refresh(np.vstack([phase, [0, 0]]))
+            refTraj.refresh(TRAJECTORY_1[:, :2])
+            pertTraj.refresh(TRAJECTORY_1[:, 2:])
+            phaseTraj.refresh(np.vstack([PHASE_1, [0, 0]]))
 
             fig.canvas.flush_events()
