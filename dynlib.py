@@ -15,7 +15,7 @@ torch.set_default_dtype(torch.double)
 
 
 # %% Dynamical system classes
-class DynamicalSystem:
+class AbstractDynamicalSystem:
     """
     class that incorporates all the dynamical systems
     """
@@ -159,7 +159,7 @@ class DynamicalSystem:
         return self.y
 
 
-class LinearDynamics(DynamicalSystem):
+class LinearDynamics(AbstractDynamicalSystem):
     """
     Class representing a linear dynamical system inherting from the dynamicalSystem class.
     state :
@@ -188,7 +188,7 @@ class LinearDynamics(DynamicalSystem):
         )
 
 
-class LimitCircle(DynamicalSystem):
+class LimitCircle(AbstractDynamicalSystem):
     """
     Class representing a limit cycle dynamical system inherting from the dynamicalSystem class.
     state :
@@ -216,18 +216,51 @@ class LimitCircle(DynamicalSystem):
         Returns:
         - None
         """
-        self.r += (self.r * (self.d - self.r**2)) * self.dt
-        self.theta += (self.w + u) * self.dt
+        # If u is an array, perturbe the state x directly with u
+        if isinstance(u, torch.Tensor):
+            # u has to have the same dimension as x
+            if u.shape != self.x.shape:
+                raise ValueError(
+                    "Perturbation vector u must have the same dimension as the state x."
+                )
+            self.r += (self.r * (self.d - self.r**2)) * self.dt
+            self.theta += (self.w) * self.dt
 
-        self.x = (
-            self.r * torch.tensor([torch.cos(self.theta), torch.sin(self.theta)])
-            + MultivariateNormal(torch.zeros(self.n), self.Q).sample()
-        )
+            if self.Q is None:
+                self.x = self.r * torch.tensor(
+                    [torch.cos(self.theta), torch.sin(self.theta)]
+                )
+            else:
+                self.x = (
+                    self.r
+                    * torch.tensor([torch.cos(self.theta), torch.sin(self.theta)])
+                    + MultivariateNormal(torch.zeros(self.n), self.Q).sample()
+                )
+            self.x += u
+
+        else:
+            self.r += (self.r * (self.d - self.r**2)) * self.dt
+            self.theta += (self.w + u) * self.dt
+
+            if self.Q is None:
+                self.x = (
+                    self.r
+                    * torch.tensor([torch.cos(self.theta), torch.sin(self.theta)])
+                    + u
+                )
+            else:
+                self.x = (
+                    self.r
+                    * torch.tensor([torch.cos(self.theta), torch.sin(self.theta)])
+                    + MultivariateNormal(torch.zeros(self.n), self.Q).sample()
+                )
         self.r = torch.sqrt(self.x[0] ** 2 + self.x[1] ** 2)
         self.theta = torch.atan2(self.x[1], self.x[0])
 
+        return
 
-class TwoLimitCycle(DynamicalSystem):
+
+class TwoLimitCycle(AbstractDynamicalSystem):
     """
     Class representing two limit cycle dynamical system inherting from the dynamicalSystem class.
     Both limit cycles have the same frequency but the phase of only one of them will be perturbed.
@@ -275,7 +308,7 @@ class TwoLimitCycle(DynamicalSystem):
         return (self.reference.theta - self.perturb.theta) % (2 * np.pi)
 
 
-class VanDerPol(DynamicalSystem):
+class VanDerPol(AbstractDynamicalSystem):
     """
     Class representing a Van der Pol dynamical system inherting from the dynamicalSystem class.
     state :
@@ -310,7 +343,7 @@ class VanDerPol(DynamicalSystem):
         )
 
 
-class RingLimitCycle(DynamicalSystem):
+class RingLimitCycle(AbstractDynamicalSystem):
     """
     Class representing a torus dynamical system inherting from the dynamicalSystem class.
     state :
@@ -320,7 +353,7 @@ class RingLimitCycle(DynamicalSystem):
         d = d
     """
 
-    def __init__(self, x0, d_r, d_p, w, Q, dt, y0=None, C=None, R=None):
+    def __init__(self, x0, d_r, d_p, w_r, w_p, Q, dt, y0=None, C=None, R=None):
         """
         Initialize a dynamical system.
 
@@ -334,32 +367,52 @@ class RingLimitCycle(DynamicalSystem):
             R (torch.Tensor, optional): The value of R. Defaults to None.
         """
         super().__init__(x0, dt)
-        self.reference = LimitCircle(x0=x0[:2], d=d_r, w=0, Q=Q, dt=dt)
-        self.perturb = LimitCircle(x0=x0[2:], d=d_p, w=w, Q=Q, dt=dt)
-        cycle_info = {
-            "x0": torch.tensor([1.5, 0]),
-            "d": 1,
-            "w": 0.5,
-            "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
-            "dt": 1e-2,
-        }
-        self.reference = LimitCircle(**cycle_info)
-        self.perturb = LimitCircle(**cycle_info)
-        super().__init__(x0, dt)
-        self.w = w
-        self.Q = Q
+        r = torch.sqrt(x0[0] ** 2 + x0[1] ** 2)
 
-    def update_state(self):
+        self.reference = LimitCircle(x0=x0[:2] * (d_r / r), d=d_r, w=w_r, Q=None, dt=dt)
+        self.perturb = LimitCircle(
+            x0=torch.tensor([r - d_r, x0[2]]), d=d_p, w=w_p, Q=None, dt=dt
+        )
+
+    def update_state(self, u=0):
         """
         Update the state of the dynamical system.
 
         Returns:
         - None
         """
-        self.x = (
-            self.x
-            + self.dt * torch.tensor([self.w1, self.w2])
-            + MultivariateNormal(torch.zeros(self.n), self.Q).sample()
+        if isinstance(u, torch.Tensor):
+            # u has to have the same dimension as x
+            if u.shape != self.x.shape:
+                raise ValueError(
+                    "Perturbation vector u must have the same dimension as the state x."
+                )
+            self.reference.update_state(u[:2])
+            projected_u = torch.dot(2 * (self.x[:2] + u[:2]), u[:2])
+            self.perturb.update_state(torch.tensor([projected_u, u[2]]))
+        else:
+            self.reference.update_state(0)
+            self.perturb.update_state(0)
+
+        self.x = self.get_state()
+        return
+
+    def get_state(self):
+        """
+        Get the state of the dynamical system.
+
+        Returns:
+        - x: torch tensor, the state of the dynamical system.
+        """
+        x = self.perturb.get_state()
+        r = self.reference.d + x[0]
+
+        return torch.tensor(
+            [
+                r * torch.cos(self.reference.theta),
+                r * torch.sin(self.reference.theta),
+                x[1],
+            ]
         )
 
 
@@ -390,6 +443,7 @@ class LinearObservation(ObservationModel):
 
 # %%
 if __name__ == "__main__":
+    # obs_noise = 1e-4
     # cycle_info = {
     #     "x0": torch.tensor([1.5, 0]),
     #     "d": 1,
@@ -400,71 +454,87 @@ if __name__ == "__main__":
     # reference_cycle = LimitCircle(**cycle_info)
     # perturb_cycle = LimitCircle(**cycle_info)
 
-    obs_noise = 1e-4
-    cycle_info = {
-        "x0": torch.tensor([1.5, 0]),
-        "mu": 1,
-        "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
-        "dt": 1e-2,
-    }
-    reference_cycle = VanDerPol(**cycle_info)
-    perturb_cycle = VanDerPol(**cycle_info)
-    twoC = TwoLimitCycle(reference_cycle, perturb_cycle, dt=1e-2)
+    # twoC = TwoLimitCycle(reference_cycle, perturb_cycle)
+    # TRAJECTORY_1 = np.zeros((200, 4))
+    # PHASE_1 = np.zeros((200, 2))
+    # fig = plt.figure(figsize=(9, 3))
+    # ax_ref = fig.add_subplot(1, 3, 1)
+    # ax_perturb = fig.add_subplot(1, 3, 2)
+    # ax_phase = fig.add_subplot(1, 3, 3)
+    # plot_info = {"xlim": (-1.1, 1.1), "ylim": (-1.1, 1.1)}
+    # refTraj = BlitPlot(
+    #     np.zeros((1, 2)),
+    #     "trajectory",
+    #     fig=fig,
+    #     ax=ax_ref,
+    #     **plot_info,
+    #     title="Reference trajectory",
+    # )
+    # pertTraj = BlitPlot(
+    #     np.zeros((1, 2)),
+    #     "trajectory",
+    #     fig=fig,
+    #     ax=ax_perturb,
+    #     **plot_info,
+    #     title="Perturbed trajectory",
+    # )
 
-    TRAJECTORY_1 = np.zeros((200, 4))
-    PHASE_1 = np.zeros((200, 2))
+    # phaseTraj = BlitPlot(
+    #     np.zeros((1, 2)),
+    #     "trajectory",
+    #     fig=fig,
+    #     ax=ax_phase,
+    #     **plot_info,
+    #     title="Direction (Phase difference)",
+    # )
+
+    # for i in range(100000):
+    #     pos = get_cursor_pos()
+    #     if pos[0] > 0.25:
+    #         twoC.update_state(pos[0])
+    #     elif pos[0] < -0.25:
+    #         twoC.update_state(pos[0])
+    #     else:
+    #         twoC.update_state(0)
+    #     if i < 200:
+    #         TRAJECTORY_1[i, :] = twoC.get_state()
+    #         PHASE_DIFF = twoC.get_phase_diff()
+    #         PHASE_1[i, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
+    #     else:
+    #         TRAJECTORY_1[0, :] = twoC.get_state()
+    #         TRAJECTORY_1 = np.roll(TRAJECTORY_1, -1, axis=0)
+    #         PHASE_DIFF = twoC.get_phase_diff()
+    #         PHASE_1[0, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
+    #         PHASE_1 = np.roll(PHASE_1, -1, axis=0)
+
+    #         refTraj.refresh(TRAJECTORY_1[:, :2])
+    #         pertTraj.refresh(TRAJECTORY_1[:, 2:])
+    #         phaseTraj.refresh(np.vstack([PHASE_1, [0, 0]]))
+
+    #         fig.canvas.flush_events()
+
+    ring = RingLimitCycle(torch.tensor([5, 0, 1]), 5, 1, 10, 100, 1e-4, 1e-4)
+
+    trajectory = np.zeros((200, 3))
+
     fig = plt.figure(figsize=(9, 3))
-    ax_ref = fig.add_subplot(1, 3, 1)
-    ax_perturb = fig.add_subplot(1, 3, 2)
-    ax_phase = fig.add_subplot(1, 3, 3)
-    plot_info = {"xlim": (-1.1, 1.1), "ylim": (-1.1, 1.1)}
+    ax_ref = fig.add_subplot(1, 3, 1, projection="3d")
+    plot_info = {"xlim": (-6, 6), "ylim": (-6, 6), "zlim": (-1, 1)}
     refTraj = BlitPlot(
-        np.zeros((1, 2)),
-        "trajectory",
+        np.zeros((1, 4)),
+        "trajectory3d",
         fig=fig,
         ax=ax_ref,
         **plot_info,
         title="Reference trajectory",
     )
-    pertTraj = BlitPlot(
-        np.zeros((1, 2)),
-        "trajectory",
-        fig=fig,
-        ax=ax_perturb,
-        **plot_info,
-        title="Perturbed trajectory",
-    )
-
-    phaseTraj = BlitPlot(
-        np.zeros((1, 2)),
-        "trajectory",
-        fig=fig,
-        ax=ax_phase,
-        **plot_info,
-        title="Direction (Phase difference)",
-    )
 
     for i in range(100000):
-        pos = get_cursor_pos()
-        if pos[0] > 0.25:
-            twoC.update_state(pos[0])
-        elif pos[0] < -0.25:
-            twoC.update_state(pos[0])
-        else:
-            twoC.update_state(0)
+        ring.update_state(0)
         if i < 200:
-            TRAJECTORY_1[i, :] = twoC.get_state()
-            PHASE_DIFF = twoC.get_phase_diff()
-            PHASE_1[i, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
+            trajectory[i, :] = ring.get_state()
         else:
-            TRAJECTORY_1[0, :] = twoC.get_state()
-            TRAJECTORY_1 = np.roll(TRAJECTORY_1, -1, axis=0)
-            PHASE_DIFF = twoC.get_phase_diff()
-            PHASE_1[0, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
-            PHASE_1 = np.roll(PHASE_1, -1, axis=0)
-
-            refTraj.refresh(TRAJECTORY_1[:, :2])
-            pertTraj.refresh(TRAJECTORY_1[:, 2:])
-            phaseTraj.refresh(np.vstack([PHASE_1, [0, 0]]))
-
+            trajectory[0, :] = ring.get_state()
+            trajectory = np.roll(trajectory, -1, axis=0)
+            refTraj.refresh(trajectory[:, :])
             fig.canvas.flush_events()
