@@ -44,6 +44,11 @@ class BlitPlot:
         elif plot_type == "trajectory":
             self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
             self.lines = self.ax.plot(data[:, 0], data[:, 1], alpha=0.5, animated=True)
+        elif plot_type == "trajectory3d":
+            self.bg = self.fig.canvas.copy_from_bbox(self.ax.bbox)
+            self.lines = self.ax.plot(
+                data[:, 0], data[:, 1], data[:, 2], alpha=0.5, animated=True
+            )
         else:
             raise ValueError("Invalid plot type")
         ax.set(**kwargs)
@@ -94,6 +99,27 @@ class BlitPlot:
             self.ax.set_ylim(X[-1, 1] * 1.1, self.ax.get_ylim()[1])
             self.redraw_canvas = True
 
+    def __refresh_traj3d(self, X):
+        """
+        Refresh the 2D trajectory plot with new data X.
+        """
+        self.lines[0].set_data(X[:, 0], X[:, 1])
+        self.lines[0].set_3d_properties(X[:, 2])
+        self.ax.draw_artist(self.lines[0])
+
+        if X[-1, 0] > self.ax.get_xlim()[1]:
+            self.ax.set_xlim(self.ax.get_xlim()[0], X[-1, 0] * 1.1)
+            self.redraw_canvas = True
+        if X[-1, 0] < self.ax.get_xlim()[0]:
+            self.ax.set_xlim(X[-1, 0] * 1.1, self.ax.get_xlim()[1])
+            self.redraw_canvas = True
+        if X[-1, 1] > self.ax.get_ylim()[1]:
+            self.ax.set_ylim(self.ax.get_ylim()[0], X[-1, 1] * 1.1)
+            self.redraw_canvas = True
+        if X[-1, 1] < self.ax.get_ylim()[0]:
+            self.ax.set_ylim(X[-1, 1] * 1.1, self.ax.get_ylim()[1])
+            self.redraw_canvas = True
+
     def __refesh_event(self, X, t):
         # for i, (y_val, event, spike) in enumerate(zip(y, event_spike, spikes)):
         #     if y_val > 0:
@@ -120,6 +146,8 @@ class BlitPlot:
             self.__refresh_image(X)
         elif self.plot_type == "trajectory":
             self.__refresh_traj(X)
+        elif self.plot_type == "trajectory3d":
+            self.__refresh_traj3d(X)
         else:
             raise ValueError("Invalid plot type")
         if self.redraw_canvas:
