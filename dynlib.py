@@ -14,6 +14,236 @@ from utils.ndlib.misclib import get_cursor_pos
 torch.set_default_dtype(torch.double)
 
 
+# %%
+class AbstractDynamicalSystemNumpy:
+    """
+    class that incorporates all the dynamical systems
+    """
+
+    def __init__(self, x0, dt=1e-3):
+        """
+        Initialize a dynamical system.
+        """
+        self.dt = dt
+        self.x = x0
+        self.y = None
+        self.n = x0.shape[0]
+        self.has_obs = False
+
+    def set_state_dynamics(self):
+        pass
+
+    def set_state(self, x):
+        """
+        Set the state of the dynamical system.
+
+        Parameters:
+        - x0: torch tensor, the initial state of the dynamical system.
+
+        Returns:
+        - None
+        """
+        self.x = x
+
+    def set_observation_model(self, C, R, y0):
+        """
+        Set the observation model of the dynamical system.
+
+        Parameters:
+        - C: torch tensor, the observation matrix.
+        - R: torch tensor, the covariance matrix of the observation noise.
+
+        Returns:
+        - None
+        """
+        self.C = C
+        self.R = R
+        self.y = y0
+        self.m = self.C.shape[0]
+
+    def update_state(self):
+        pass
+
+    def update_observation(self):
+        """
+        Update the observation of the dynamical system.
+
+        Returns:
+        - None
+        """
+        pass
+
+    def update(self):
+        """
+        Update and return the state and the observation of the dynamical system.
+
+        Returns:
+        - current_state: torch tensor, the current state of the dynamical system.
+        - current_observation: torch tensor, the current observation of the dynamical system. (if exists)
+        """
+        if self.has_obs:
+            return self.update_state(), self.update_observation()
+        return self.update_state(), None
+
+    def generate_trajectory(self, t, update=False):
+        """
+        Generate the trajectory of the dynamical system.
+
+        Parameters:
+        - t: int, the number of time steps to generate.
+        - update: bool, whether to update the dynamical system.
+
+        Returns:
+        - trajectory: torch tensor, the generated trajectory of the dynamical system.
+        """
+        trajectory = np.zeros((t, self.n))
+        trajectory[0] = self.x
+
+        x0 = self.get_state()
+
+        for i in range(1, t):
+            self.update_state()
+            trajectory[i] = self.get_state()
+
+        if not update:
+            self.x = x0
+
+        return trajectory
+
+    def generate_observation(self, n, update=False):
+        """
+        Generate the observation of the dynamical system.
+
+        Parameters:
+        - n: int, the number of time steps to generate.
+        - update: bool, whether to update the dynamical system.
+
+        Returns:
+        - observation: torch tensor, the generated observation of the dynamical system.
+        """
+        if not self.has_obs:
+            raise ValueError("The dynamical system has no observation model.")
+
+        observation = np.zeros((n, self.m))
+        observation[0] = self.y
+
+        x0 = self.get_state()
+        y0 = self.get_observation()
+
+        for i in range(1, n):
+            self.update()
+            observation[i] = self.y
+
+        if not update:
+            self.x = x0
+            self.y = y0
+
+        return observation
+
+    def get_state(self):
+        """
+        Get the state of the dynamical system.
+
+        Returns:
+        - x: torch tensor, the state of the dynamical system.
+        """
+        return self.x
+
+    def get_observation(self):
+        """
+        Get the observation of the dynamical system.
+
+        Returns:
+        - y: torch tensor, the observation of the dynamical system.
+        """
+        return self.y
+
+
+class LinearDynamicsNP(AbstractDynamicalSystemNumpy):
+    """
+    Class representing a linear dynamical system inherting from the dynamicalSystem class.
+    state :
+        x = Ax + v
+        v ~ normal(0, Q)
+    """
+
+    def __init__(self, x0, A, Q, dt, y0=None, C=None, R=None):
+        """
+        Initialize a dynamical system.
+
+        """
+        super().__init__(x0, dt)
+        self.A = A
+        self.Q = Q
+
+    def update_state(self):
+        """
+        Update the state of the dynamical system.
+
+        Returns:
+        - None
+        """
+        self.x = self.A @ self.x
+
+
+class LimitCircleNP(AbstractDynamicalSystemNumpy):
+    """
+    Class representing a limit cycle dynamical system inherting from the dynamicalSystem class.
+    state :
+        x = [r, theta]
+        r' = r(d - r^2)
+        theta' = w
+    """
+
+    def __init__(self, x0, d, w, Q, dt, y0=None, C=None, R=None):
+        """
+        Initialize a dynamical system.
+
+        """
+        super().__init__(x0, dt)
+        self.r = np.sqrt(self.x[0] ** 2 + self.x[1] ** 2)
+        self.theta = np.arctan2(self.x[1], self.x[0])
+        self.d = d
+        self.w = w
+        self.Q = Q
+
+    def update_state(self, u=0):
+        """
+        Update the state of the dynamical system.
+
+        Returns:
+        - None
+        """
+        # If u is an array, perturbe the state x directly with u
+        if isinstance(u, np.ndarray):
+            # u has to have the same dimension as x
+            if u.shape != self.x.shape:
+                raise ValueError(
+                    "Perturbation vector u must have the same dimension as the state x."
+                )
+            self.r += (self.r * (self.d - self.r**2)) * self.dt
+            self.theta += (self.w) * self.dt
+
+            if self.Q is None:
+                self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)])
+            else:
+                self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)])
+            self.x += u
+
+        else:
+            self.r += (self.r * (self.d - self.r**2)) * self.dt
+            self.theta += (self.w + u) * self.dt
+
+            if self.Q is None:
+                self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)]) + u
+            else:
+                self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)])
+        self.r = np.sqrt(self.x[0] ** 2 + self.x[1] ** 2)
+        self.theta = np.arctan2(self.x[1], self.x[0])
+
+        return
+
+
 # %% Dynamical system classes
 class AbstractDynamicalSystem:
     """
@@ -304,6 +534,13 @@ class TwoLimitCycle(AbstractDynamicalSystem):
         """
         return torch.cat([self.reference.get_state(), self.perturb.get_state()])
 
+    def update_w(self, w):
+        """
+        Update the frequency of the dynamical system.
+        """
+        self.reference.w = w
+        self.perturb.w = w
+
     def get_phase_diff(self):
         return (self.reference.theta - self.perturb.theta) % (2 * np.pi)
 
@@ -443,98 +680,36 @@ class LinearObservation(ObservationModel):
 
 # %%
 if __name__ == "__main__":
-    # obs_noise = 1e-4
-    # cycle_info = {
-    #     "x0": torch.tensor([1.5, 0]),
-    #     "d": 1,
-    #     "w": 0.5,
-    #     "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
-    #     "dt": 1e-2,
-    # }
-    # reference_cycle = LimitCircle(**cycle_info)
-    # perturb_cycle = LimitCircle(**cycle_info)
+    obs_noise = 1e-10
+    cycle_info = {
+        "x0": torch.tensor([1.5, 0]),
+        "d": 1,
+        "w": 1,
+        "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
+        "dt": 1e-2,
+    }
+    torch_cycle_torch = LimitCircle(**cycle_info)
 
-    # twoC = TwoLimitCycle(reference_cycle, perturb_cycle)
-    # TRAJECTORY_1 = np.zeros((200, 4))
-    # PHASE_1 = np.zeros((200, 2))
-    # fig = plt.figure(figsize=(9, 3))
-    # ax_ref = fig.add_subplot(1, 3, 1)
-    # ax_perturb = fig.add_subplot(1, 3, 2)
-    # ax_phase = fig.add_subplot(1, 3, 3)
-    # plot_info = {"xlim": (-1.1, 1.1), "ylim": (-1.1, 1.1)}
-    # refTraj = BlitPlot(
-    #     np.zeros((1, 2)),
-    #     "trajectory",
-    #     fig=fig,
-    #     ax=ax_ref,
-    #     **plot_info,
-    #     title="Reference trajectory",
-    # )
-    # pertTraj = BlitPlot(
-    #     np.zeros((1, 2)),
-    #     "trajectory",
-    #     fig=fig,
-    #     ax=ax_perturb,
-    #     **plot_info,
-    #     title="Perturbed trajectory",
-    # )
+    cycle_info_np = {
+        "x0": np.array([1.5, 0]),
+        "d": 1,
+        "w": 1,
+        "Q": np.array([[obs_noise, 0.0], [0.0, obs_noise]]),
+        "dt": 1e-2,
+    }
+    torch_cycle_NP = LimitCircleNP(**cycle_info)
 
-    # phaseTraj = BlitPlot(
-    #     np.zeros((1, 2)),
-    #     "trajectory",
-    #     fig=fig,
-    #     ax=ax_phase,
-    #     **plot_info,
-    #     title="Direction (Phase difference)",
-    # )
+    torch_time = np.zeros(1000)
+    np_time = np.zeros(1000)
+    for i in range(1000):
+        with Timer() as t:
+            torch_cycle_torch.update_state()
+        torch_time[i] = t.msecs
+        with Timer() as t:
+            torch_cycle_NP.update_state()
+        np_time[i] = t.msecs
 
-    # for i in range(100000):
-    #     pos = get_cursor_pos()
-    #     if pos[0] > 0.25:
-    #         twoC.update_state(pos[0])
-    #     elif pos[0] < -0.25:
-    #         twoC.update_state(pos[0])
-    #     else:
-    #         twoC.update_state(0)
-    #     if i < 200:
-    #         TRAJECTORY_1[i, :] = twoC.get_state()
-    #         PHASE_DIFF = twoC.get_phase_diff()
-    #         PHASE_1[i, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
-    #     else:
-    #         TRAJECTORY_1[0, :] = twoC.get_state()
-    #         TRAJECTORY_1 = np.roll(TRAJECTORY_1, -1, axis=0)
-    #         PHASE_DIFF = twoC.get_phase_diff()
-    #         PHASE_1[0, :] = [np.cos(PHASE_DIFF), np.sin(PHASE_DIFF)]
-    #         PHASE_1 = np.roll(PHASE_1, -1, axis=0)
-
-    #         refTraj.refresh(TRAJECTORY_1[:, :2])
-    #         pertTraj.refresh(TRAJECTORY_1[:, 2:])
-    #         phaseTraj.refresh(np.vstack([PHASE_1, [0, 0]]))
-
-    #         fig.canvas.flush_events()
-
-    ring = RingLimitCycle(torch.tensor([5, 0, 1]), 5, 1, 10, 100, 1e-4, 1e-4)
-
-    trajectory = np.zeros((200, 3))
-
-    fig = plt.figure(figsize=(9, 3))
-    ax_ref = fig.add_subplot(1, 3, 1, projection="3d")
-    plot_info = {"xlim": (-6, 6), "ylim": (-6, 6), "zlim": (-1, 1)}
-    refTraj = BlitPlot(
-        np.zeros((1, 4)),
-        "trajectory3d",
-        fig=fig,
-        ax=ax_ref,
-        **plot_info,
-        title="Reference trajectory",
-    )
-
-    for i in range(100000):
-        ring.update_state(0)
-        if i < 200:
-            trajectory[i, :] = ring.get_state()
-        else:
-            trajectory[0, :] = ring.get_state()
-            trajectory = np.roll(trajectory, -1, axis=0)
-            refTraj.refresh(trajectory[:, :])
-            fig.canvas.flush_events()
+    plt.plot(torch_time, label="Torch")
+    plt.plot(np_time, label="Numpy")
+    plt.legend()
+    plt.show()
