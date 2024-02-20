@@ -56,7 +56,7 @@ def test_TwoLimitCycle():
     }
     reference_cycle = LimitCircle(**cycle_info)
     perturb_cycle = LimitCircle(**cycle_info)
-    twoC = TwoLimitCycle(reference_cycle, perturb_cycle, dt=1e-2)
+    twoC = TwoLimitCycle(reference_cycle, perturb_cycle)
 
     traj = np.zeros((200, 4))
     phase = np.zeros((200, 2))
@@ -117,6 +117,35 @@ def test_TwoLimitCycle():
             fig.canvas.flush_events()
 
 
+def test_RingLimitCycle():
+    ring = RingLimitCycle(torch.tensor([5, 0, 1]), 5, 1, 5, 200, 1e-4, 1e-4)
+
+    trajectory = np.zeros((200, 3))
+
+    fig = plt.figure(figsize=(9, 3))
+    ax_ref = fig.add_subplot(1, 3, 1, projection="3d")
+    plot_info = {"xlim": (-6, 6), "ylim": (-6, 6), "zlim": (-2, 2)}
+    refTraj = BlitPlot(
+        np.zeros((1, 4)),
+        "trajectory3d",
+        fig=fig,
+        ax=ax_ref,
+        **plot_info,
+        title="Reference trajectory",
+    )
+
+    for i in range(100000):
+        ring.update_state(0)
+        if i < 200:
+            trajectory[i, :] = ring.get_state()
+        else:
+            trajectory[0, :] = ring.get_state()
+            trajectory = np.roll(trajectory, -1, axis=0)
+            refTraj.refresh(trajectory[:, :])
+            fig.canvas.flush_events()
+
+
 if __name__ == "__main__":
     test_TwoLimitCycle()
     # test_VanDerPol()
+    # test_RingLimitCycle()
