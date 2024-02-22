@@ -19,7 +19,7 @@ def test_VanDerPol():
         "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
         "dt": 1e-2,
     }
-    vdp = VanDerPol(**cycle_info)
+    vdp = VanDerPolTorch(**cycle_info)
     traj = np.zeros((200, 2))
     fig = plt.figure(figsize=(4, 4))
     ax = fig.add_subplot(1, 1, 1)
@@ -54,9 +54,9 @@ def test_TwoLimitCycle():
         "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
         "dt": 1e-2,
     }
-    reference_cycle = LimitCircle(**cycle_info)
-    perturb_cycle = LimitCircle(**cycle_info)
-    twoC = TwoLimitCycle(reference_cycle, perturb_cycle)
+    reference_cycle = LimitCircleTorch(**cycle_info)
+    perturb_cycle = LimitCircleTorch(**cycle_info)
+    twoC = TwoLimitCycleTorch(reference_cycle, perturb_cycle)
 
     traj = np.zeros((200, 4))
     phase = np.zeros((200, 2))
@@ -118,7 +118,7 @@ def test_TwoLimitCycle():
 
 
 def test_RingLimitCycle():
-    ring = RingLimitCycle(torch.tensor([5, 0, 1]), 5, 1, 5, 200, 1e-4, 1e-4)
+    ring = RingLimitCycleTorch(torch.tensor([5, 0, 1]), 5, 1, 5, 200, 1e-4, 1e-4)
 
     trajectory = np.zeros((200, 3))
 
