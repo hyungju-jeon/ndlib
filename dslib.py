@@ -28,7 +28,7 @@ class AbstractDynamicalSystem:
         states[0, :] = x0
 
         for kt in range(1, T):  # Euler-Maruyama integration
-            states[kt, :] = states[kt-1, :] + dt * self.f(states[kt-1, :])
+            states[kt, :] = states[kt - 1, :] + dt * self.f(states[kt - 1, :])
             states[kt, :] = states[kt, :] + u[kt, :]
 
         return states
@@ -41,33 +41,33 @@ class AbstractDynamicalSystem:
 
 
 class VanDerPol(AbstractDynamicalSystem):
-    """ Van der Pol oscillator """
+    """Van der Pol oscillator"""
 
-    def __init__(self, params={'mu': 1.0}):
+    def __init__(self, params={"mu": 1.0}):
         dim = 2
         super().__init__(dim, params)
 
     def f(self, x):
-        mu = self.params['mu']
+        mu = self.params["mu"]
 
-        dx = np.array([x[1], mu * (1 - x[0]**2) * x[1] - x[0]])
+        dx = np.array([x[1], mu * (1 - x[0] ** 2) * x[1] - x[0]])
         return dx
 
 
 def computeFiringRate(x, C, b):
-    """ Compute the firing rate of a log-linear Poisson neuron model """
+    """Compute the firing rate of a log-linear Poisson neuron model"""
     return np.exp(x @ C + b)
 
 
 def SNR_dB_logLinearPoissonNeurons_fastBound(firing_rates, C):
-    """ Evaluate the SNR of observations using Fisher Information Matrix of a log-linear Poisson neuron model.
+    """Evaluate the SNR of observations using Fisher Information Matrix of a log-linear Poisson neuron model.
     Signal is defined to be the latent states x.
     Each neuron and time points are assumed to be independent. This is not a realistic assumption,
     but it gives an upper bound of the SNR. Each sample/time point is assumed to be independent,
     and the expected SNR per sample is returned.
     """
     assert firing_rates.shape[1] == C.shape[1]
-    SNR_ub = 10 * np.log10(np.mean(firing_rates @ (C ** 2).T, axis=0))
+    SNR_ub = 10 * np.log10(np.mean(firing_rates @ (C**2).T, axis=0))
     return SNR_ub
 
 
@@ -94,34 +94,38 @@ def _C_to_U2E2(C):
     $$
     SNR is inversely proportional to the expected value of this quantity.
     """
-    assert C.shape[0] >= C.shape[1], 'C must have more rows than columns'
+    assert C.shape[0] >= C.shape[1], "C must have more rows than columns"
     U, E, _ = np.linalg.svd(C, full_matrices=False)
 
-    return (np.square(U) @ (E ** -2))
+    return np.square(U) @ (E**-2)
 
 
 def SNR_dB_logLinearPoissonNeurons_wInv(x, C, b):
     """Tighter bound for the SNR, but a slower implementation"""
     firing_rates = computeFiringRate(x, C, b)
     # slow implementation... what's bsxfun in numpy?
-    FIM_e = np.mean([C @ np.diag(firing_rates[t, :]) @
-                    C.T for t in range(x.shape[0])], axis=0)
+    FIM_e = np.mean(
+        [C @ np.diag(firing_rates[t, :]) @ C.T for t in range(x.shape[0])], axis=0
+    )
     CR_var = np.linalg.inv(FIM_e)  # this is numerically fishy
     SNR = 10 * np.log10(1 / CR_var.diagonal())
     return SNR, FIM_e
 
 
-def updateBiasToMatchTargetFiringRate(currentRatePerBin, currentBias, targetRatePerBin=0.05):
+def updateBiasToMatchTargetFiringRate(
+    currentRatePerBin, currentBias, targetRatePerBin=0.05
+):
     # easy to find the bias to compensate for the change in firing rate due to changing C
     assert currentBias.size == currentRatePerBin.size
-    return currentBias + np.log(targetRatePerBin/currentRatePerBin)
+    return currentBias + np.log(targetRatePerBin / currentRatePerBin)
 
 
 def computeSNR(latentTraj, C, b, targetRatePerBin):
     # note that the latentTraj is assumed to be of variance 1
     firing_rates = computeFiringRate(latentTraj, C, b)
     b = updateBiasToMatchTargetFiringRate(
-        np.mean(firing_rates, axis=0), b, targetRatePerBin=targetRatePerBin)
+        np.mean(firing_rates, axis=0), b, targetRatePerBin=targetRatePerBin
+    )
     firing_rates = computeFiringRate(latentTraj, C, b)
 
     # U2E2 = _C_to_U2E2(C.T)
@@ -131,7 +135,7 @@ def computeSNR(latentTraj, C, b, targetRatePerBin):
     for i, firing_rate in enumerate(firing_rates):
         SNR += np.trace(np.linalg.inv(C @ np.diag(firing_rate) @ C.T))
     SNR = SNR / firing_rates.shape[0]
-    SNR = 10 * np.log10(C.shape[0]/SNR)
+    SNR = 10 * np.log10(C.shape[0] / SNR)
 
     return SNR, b
 
@@ -140,7 +144,8 @@ def computeSNR_2(latentTraj, C, b, targetRatePerBin):
     # note that the latentTraj is assumed to be of variance 1
     firing_rates = computeFiringRate(latentTraj, C, b)
     b = updateBiasToMatchTargetFiringRate(
-        np.mean(firing_rates, axis=0), b, targetRatePerBin=targetRatePerBin)
+        np.mean(firing_rates, axis=0), b, targetRatePerBin=targetRatePerBin
+    )
     firing_rates = computeFiringRate(latentTraj, C, b)
 
     SNR = 0
@@ -150,7 +155,7 @@ def computeSNR_2(latentTraj, C, b, targetRatePerBin):
             * latentTraj.shape[1]
         )
     SNR = SNR / firing_rates.shape[0]
-    SNR = 10 * np.log10(C.shape[0]/SNR)
+    SNR = 10 * np.log10(C.shape[0] / SNR)
 
     return SNR, b
 
@@ -185,10 +190,13 @@ def scaleCforTargetSNR(latentTraj, C, b, targetRatePerBin, targetSNR, SNR_method
 
     if (SNR - targetSNR) > 0.1 * np.abs(targetSNR):
         print(
-            f"Warning: SNR reached is way greater than the target SNR {targetSNR}. SNR =", SNR)
+            f"Warning: SNR reached is way greater than the target SNR {targetSNR}. SNR =",
+            SNR,
+        )
     if (SNR - targetSNR) < -0.1 * np.abs(targetSNR):
         print(
-            f"Warning: SNR reached is less than the target SNR {targetSNR}. SNR =", SNR)
+            f"Warning: SNR reached is less than the target SNR {targetSNR}. SNR =", SNR
+        )
 
     return (C * gain), b, SNR
 
@@ -222,27 +230,36 @@ def scaleCforTargetSNR_dim(latentTraj, C, b, targetRatePerBin, targetSNR):
     SNR, b = computeSNR(latentTraj, C * gain, b, targetRatePerBin)
 
     if any(SNR < 0.9 * targetSNR):
-        print('Warning: SNR reached is less than the target SNR. SNR =', SNR)
+        print("Warning: SNR reached is less than the target SNR. SNR =", SNR)
 
     return (C * gain), b, SNR
 
 
-def autoGeneratePoissonObservations(latentTraj, C=None, dNeurons=100, targetRatePerBin=0.01, pCoherence=0.5, pSparsity=0.1, targetSNR=10.0, SNR_method=computeSNR):
-    assert pSparsity >= 0, 'pSparsity must be between 0 and 1'
-    assert pSparsity <= 1, 'pSparsity must be between 0 and 1'
-    assert dNeurons > 0, 'dNeurons must be positive'
-    assert targetRatePerBin > 0, 'targetRatePerBin must be positive'
+def autoGeneratePoissonObservations(
+    latentTraj,
+    C=None,
+    dNeurons=100,
+    targetRatePerBin=0.01,
+    pCoherence=0.5,
+    pSparsity=0.1,
+    targetSNR=10.0,
+    SNR_method=computeSNR,
+):
+    assert pSparsity >= 0, "pSparsity must be between 0 and 1"
+    assert pSparsity <= 1, "pSparsity must be between 0 and 1"
+    assert dNeurons > 0, "dNeurons must be positive"
+    assert targetRatePerBin > 0, "targetRatePerBin must be positive"
     if not np.all(np.isclose(np.std(latentTraj, axis=0), 1)):
-        print('WARNING: latent trajectory must have unit variance. Normalizing...')
+        print("WARNING: latent trajectory must have unit variance. Normalizing...")
         latentTraj = latentTraj / np.std(latentTraj, axis=0)
 
     dLatent = latentTraj.shape[1]
-    C = generate_random_loading_matrix(
-        dLatent, dNeurons, pCoherence, pSparsity, C=C)
+    C = generate_random_loading_matrix(dLatent, dNeurons, pCoherence, pSparsity, C=C)
 
     b = 1.0 * np.random.rand(1, dNeurons) - np.log(targetRatePerBin)
     C, b, SNR = scaleCforTargetSNR(
-        latentTraj, C, b, targetRatePerBin, targetSNR=targetSNR, SNR_method=SNR_method)
+        latentTraj, C, b, targetRatePerBin, targetSNR=targetSNR, SNR_method=SNR_method
+    )
     firing_rates = computeFiringRate(latentTraj, C, b)
 
     observations = np.random.poisson(firing_rates)
@@ -265,7 +282,7 @@ def generate_random_loading_matrix(dLatent, dNeurons, pCoherence, pSparsity=0, C
     if C is None:
         C = np.random.randn(dLatent, dNeurons)
         C = C * (np.random.rand(dLatent, dNeurons) > pSparsity)
-        C /= np.linalg.norm(C, axis=0)
+        # C /= np.linalg.norm(C, axis=0)
 
     T = 15
     K = 1000
@@ -282,7 +299,7 @@ def generate_random_loading_matrix(dLatent, dNeurons, pCoherence, pSparsity=0, C
                 C /= np.linalg.norm(C, axis=0)
                 return C
 
-            VV = (C.T@C - np.eye(dNeurons))/rho
+            VV = (C.T @ C - np.eye(dNeurons)) / rho
             v = euclidean_proj_l1ball(VV.flatten(), s=1)
             V = np.reshape(v, (dNeurons, dNeurons))
 
@@ -293,9 +310,11 @@ def generate_random_loading_matrix(dLatent, dNeurons, pCoherence, pSparsity=0, C
 
     if coh >= pCoherence:
         warnings.warn(
-            f'target Coherence {pCoherence} not reached, Current Coherence {coh}')
+            f"target Coherence {pCoherence} not reached, Current Coherence {coh}"
+        )
 
     C /= np.linalg.norm(C, axis=0)
+
     return C
 
 
@@ -304,7 +323,7 @@ def decode_latents_MLE_fast(observations, C, b):
     Closed-form decoding of the latent states from spike trains using approximate MLE formula.
     It approximates the exponential function of the latent state as a linear function around the origin.
     """
-    Ymod = (observations * np.exp(-b) - 1)
+    Ymod = observations * np.exp(-b) - 1
     Xamle = lstsq(C.T, Ymod.T)[0].T
 
     return Xamle
@@ -363,46 +382,48 @@ def ppLL_normalized(y, rate, lograte=[]):
     >>> import numpy as np
     >>> ppLL_normalized(np.array([0, 0, 0, 1, 0, 1]), np.array([0.5, 0.1, 0.01, 1.2, 0.1, 2.2]))
     """
-    assert np.all(rate >= 0), 'firing rate must be non-negative'
-    assert np.all(y >= 0), 'number of spikes must be natural numbers'
+    assert np.all(rate >= 0), "firing rate must be non-negative"
+    assert np.all(y >= 0), "number of spikes must be natural numbers"
 
     if np.any(np.isinf(rate)):
         raise ValueError(
-            'Firing rate per bin is Inf. You may have a bad initial parameters or optimization.')
+            "Firing rate per bin is Inf. You may have a bad initial parameters or optimization."
+        )
 
     if np.size(lograte) == 0:
         # eps = np.finfo(rate.dtype).eps # smallest gap for floating point at 1.0
         # rate = np.where(rate > eps, rate, eps) # put lograte for 0 firing rate in numerical range
         # suppress the divide by zero in log(0) warning
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             lograte = np.log(rate)
 
     if np.any(np.isinf(lograte)):
-        lograte = np.where(np.logical_and(y == 0, np.isinf(
-            lograte)), 0, lograte)  # 0 times -inf = 0
+        lograte = np.where(
+            np.logical_and(y == 0, np.isinf(lograte)), 0, lograte
+        )  # 0 times -inf = 0
 
-    assert lograte.shape == y.shape == rate.shape, 'provide firing rate per bin'
+    assert lograte.shape == y.shape == rate.shape, "provide firing rate per bin"
 
     nSpk = np.sum(y, axis=0)  # number of spikes
-    nT = y.shape[0]           # number of time bins
-    mfr = nSpk / nT           # mean number of spikes per bin
+    nT = y.shape[0]  # number of time bins
+    mfr = nSpk / nT  # mean number of spikes per bin
 
     # CORE computation:
     # return (np.sum(y * lograte - rate, axis=0) / nT) - (np.sum(y * np.log(mfr) - mfr, axis=0) / nT)
 
     # suppress the divide by zero in log(0) warning
-    with np.errstate(divide='ignore', invalid='ignore'):
-        LL0 = mfr * np.log(np.where(mfr == 0, 1., mfr)) - mfr
+    with np.errstate(divide="ignore", invalid="ignore"):
+        LL0 = mfr * np.log(np.where(mfr == 0, 1.0, mfr)) - mfr
 
     return np.sum(y * lograte - rate, axis=0) / nT - LL0
 
 
 def euclidean_proj_simplex(v, s=1):
-    """ Compute the Euclidean projection on a positive simplex
+    """Compute the Euclidean projection on a positive simplex
 
     Solves the optimisation problem (using the algorithm from [1]):
 
-        min_w 0.5 * || w - v ||_2^2 , s.t. \sum_i w_i = s, w_i >= 0 
+        min_w 0.5 * || w - v ||_2^2 , s.t. \sum_i w_i = s, w_i >= 0
 
     Parameters
     ----------
@@ -431,7 +452,7 @@ def euclidean_proj_simplex(v, s=1):
         http://www.cs.berkeley.edu/~jduchi/projects/DuchiSiShCh08.pdf
     """
     assert s > 0, "Radius s must be strictly positive (%d <= 0)" % s
-    n, = v.shape  # will raise ValueError if v is not 1-D
+    (n,) = v.shape  # will raise ValueError if v is not 1-D
     # check if we are already on the simplex
     if v.sum() == s and np.alltrue(v >= 0):
         # best projection: itself!
@@ -449,7 +470,7 @@ def euclidean_proj_simplex(v, s=1):
 
 
 def euclidean_proj_l1ball(v, s=1):
-    """ Compute the Euclidean projection on a L1-ball
+    """Compute the Euclidean projection on a L1-ball
 
     Solves the optimisation problem (using the algorithm from [1]):
 
@@ -477,7 +498,7 @@ def euclidean_proj_l1ball(v, s=1):
     euclidean_proj_simplex
     """
     assert s > 0, "Radius s must be strictly positive (%d <= 0)" % s
-    n, = v.shape  # will raise ValueError if v is not 1-D
+    (n,) = v.shape  # will raise ValueError if v is not 1-D
     # compute the vector of absolute values
     u = np.abs(v)
     # check if v is already a solution
@@ -494,20 +515,20 @@ def euclidean_proj_l1ball(v, s=1):
 
 def generate_observations(latentTraj, params, C=None):
     observations, C, b, firing_rate_per_bin, SNR = autoGeneratePoissonObservations(
-        latentTraj[:, :params["dLatent"]],
+        latentTraj[:, : params["dLatent"]],
         dNeurons=params["dNeurons"],
         targetRatePerBin=params["targetRatePerBin"],
         pCoherence=params["pCoherence"],
         pSparsity=params["pSparsity"],
         targetSNR=params["targetSNR"],
         SNR_method=computeSNR,
-        C=C
+        C=C,
     )
     return observations, C, b, firing_rate_per_bin, SNR
 
 
 if __name__ == "__main__":
-    vdp = VanDerPol(params={'mu': 1.0})
+    vdp = VanDerPol(params={"mu": 1.0})
     x = vdp.simulate(dt=0.01, T=1000, x0=np.array([1.0, 1.0]))
     y, C, b, SNR = autoGeneratePoissonObservations(x, targetRatePerBin=0.1)
 

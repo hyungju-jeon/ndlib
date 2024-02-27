@@ -2,12 +2,8 @@
 """
 library for Dynamical system
 """
-from re import T
 import numpy as np
 import torch
-
-from matplotlib import pyplot as plt
-from utils.ndlib.vislib import *
 
 torch.set_default_dtype(torch.double)
 
@@ -252,7 +248,14 @@ class TwoLimitCycleNumpy(AbstractDynamicalSystemNumpy):
         theta' = w
     """
 
-    def __init__(self, ref_cycle, perturb_cycle, y0=None, C=None, R=None):
+    def __init__(
+        self,
+        ref_cycle: LimitCircleNumpy,
+        perturb_cycle: LimitCircleNumpy,
+        y0=None,
+        C=None,
+        R=None,
+    ):
         """
         Initialize a dynamical system.
 
