@@ -1,4 +1,5 @@
 import torch
+import time
 from matplotlib import pyplot as plt
 from torch.distributions.multivariate_normal import MultivariateNormal
 
@@ -6,6 +7,8 @@ from utils.ndlib.misclib import Timer
 from utils.ndlib.vislib import *
 from utils.ndlib.dynlib import *
 from utils.ndlib.misclib import get_cursor_pos
+
+dt = 1e-3
 
 
 def test_VanDerPol():
@@ -48,15 +51,15 @@ def test_VanDerPol():
 def test_TwoLimitCycle():
     obs_noise = 1e-6
     cycle_info = {
-        "x0": torch.tensor([1.5, 0]),
+        "x0": np.array([1.5, 0]),
         "d": 1,
-        "w": 0.5,
-        "Q": torch.tensor([[obs_noise, 0.0], [0.0, obs_noise]]),
-        "dt": 1e-2,
+        "w": 2 * np.pi * 2,
+        "Q": np.array([[obs_noise, 0.0], [0.0, obs_noise]]),
+        "dt": dt,
     }
-    reference_cycle = LimitCircleTorch(**cycle_info)
-    perturb_cycle = LimitCircleTorch(**cycle_info)
-    twoC = TwoLimitCycleTorch(reference_cycle, perturb_cycle)
+    reference_cycle = LimitCircleNumpy(**cycle_info)
+    perturb_cycle = LimitCircleNumpy(**cycle_info)
+    twoC = TwoLimitCycleNumpy(reference_cycle, perturb_cycle)
 
     traj = np.zeros((200, 4))
     phase = np.zeros((200, 2))
@@ -115,6 +118,7 @@ def test_TwoLimitCycle():
             phaseTraj.refresh(np.vstack([phase, [0, 0]]))
 
             fig.canvas.flush_events()
+        time.sleep(dt)
 
 
 def test_RingLimitCycle():

@@ -221,7 +221,9 @@ class LimitCircleNumpy(AbstractDynamicalSystemNumpy):
             if self.Q is None:
                 self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)])
             else:
-                self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)])
+                self.x = self.r * np.array(
+                    [np.cos(self.theta), np.sin(self.theta)]
+                ) + np.random.multivariate_normal(np.zeros(self.n), self.Q)
             self.x += u
 
         else:
@@ -231,7 +233,9 @@ class LimitCircleNumpy(AbstractDynamicalSystemNumpy):
             if self.Q is None:
                 self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)]) + u
             else:
-                self.x = self.r * np.array([np.cos(self.theta), np.sin(self.theta)])
+                self.x = self.r * np.array(
+                    [np.cos(self.theta), np.sin(self.theta)]
+                ) + np.random.multivariate_normal(np.zeros(self.n), self.Q)
         self.r = np.sqrt(self.x[0] ** 2 + self.x[1] ** 2)
         self.theta = np.arctan2(self.x[1], self.x[0])
 
@@ -361,10 +365,10 @@ class RingLimitCycleNumpy(AbstractDynamicalSystemNumpy):
         super().__init__(x0, dt)
         r = np.sqrt(x0[0] ** 2 + x0[1] ** 2)
 
-        self.reference = LimitCircleTorch(
+        self.reference = LimitCircleNumpy(
             x0=x0[:2] * (d_r / r), d=d_r, w=w_r, Q=None, dt=dt
         )
-        self.perturb = LimitCircleTorch(
+        self.perturb = LimitCircleNumpy(
             x0=np.array([r - d_r, x0[2]]), d=d_p, w=w_p, Q=None, dt=dt
         )
 
@@ -781,10 +785,10 @@ class RingLimitCycleTorch(AbstractDynamicalSystemTorch):
         super().__init__(x0, dt)
         r = torch.sqrt(x0[0] ** 2 + x0[1] ** 2)
 
-        self.reference = LimitCircleTorch(
+        self.reference = LimitCircleNumpy(
             x0=x0[:2] * (d_r / r), d=d_r, w=w_r, Q=None, dt=dt
         )
-        self.perturb = LimitCircleTorch(
+        self.perturb = LimitCircleNumpy(
             x0=torch.tensor([r - d_r, x0[2]]), d=d_p, w=w_p, Q=None, dt=dt
         )
 
@@ -844,7 +848,7 @@ def limit_circle(x0, d, w, Q, dt, y0=None, C=None, R=None):
     if isinstance(x0, np.ndarray):
         return LimitCircleNumpy(x0, d, w, Q, dt, y0, C, R)
     elif isinstance(x0, torch.Tensor):
-        return LimitCircleTorch(x0, d, w, Q, dt, y0, C, R)
+        return LimitCircleNumpy(x0, d, w, Q, dt, y0, C, R)
     else:
         raise ValueError("x0 must be a numpy array or a torch tensor.")
 
@@ -853,7 +857,7 @@ def two_limit_circle(ref_cycle, perturb_cycle, y0=None, C=None, R=None):
     if isinstance(ref_cycle.x, np.ndarray):
         return TwoLimitCycleNumpy(ref_cycle, perturb_cycle, y0, C, R)
     elif isinstance(ref_cycle.x, torch.Tensor):
-        return TwoLimitCycleTorch(ref_cycle, perturb_cycle, y0, C, R)
+        return TwoLimitCycleNumpy(ref_cycle, perturb_cycle, y0, C, R)
     else:
         raise ValueError("x0 must be a numpy array or a torch tensor.")
 
