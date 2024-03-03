@@ -79,6 +79,37 @@ class AbstractDynamicalSystemNumpy:
             return self.update_state(), self.update_observation()
         return self.update_state(), None
 
+    def generate(self, t, update=False):
+        """
+        Generate the trajectory of the dynamical system.
+
+        Parameters:
+        - t: int, the number of time steps to generate.
+        - update: bool, whether to update the dynamical system.
+
+        Returns:
+        - trajectory: torch tensor, the generated trajectory of the dynamical system.
+        """
+        trajectory = np.zeros((t, self.n))
+        trajectory[0] = self.x
+
+        observation = np.zeros((t, self.m))
+        observation[0] = self.y
+
+        x0 = self.get_state()
+        y0 = self.get_observation()
+
+        for i in range(1, t):
+            self.update_state()
+            trajectory[i] = self.get_state()
+            observation[i] = self.y
+
+        if not update:
+            self.x = x0
+            self.y = y0
+
+        return trajectory, observation
+
     def generate_trajectory(self, t, update=False):
         """
         Generate the trajectory of the dynamical system.
