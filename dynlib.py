@@ -110,7 +110,7 @@ class AbstractDynamicalSystemNumpy:
 
         return trajectory, observation
 
-    def generate_trajectory(self, t, update=False):
+    def generate_trajectory(self, t, u=None, update=False):
         """
         Generate the trajectory of the dynamical system.
 
@@ -127,7 +127,10 @@ class AbstractDynamicalSystemNumpy:
         x0 = self.get_state()
 
         for i in range(1, t):
-            self.update_state()
+            if u is not None:
+                self.update_state(u[i, :])
+            else:
+                self.update_state()
             trajectory[i] = self.get_state()
 
         if not update:
@@ -247,7 +250,7 @@ class LimitCircleNumpy(AbstractDynamicalSystemNumpy):
                     "Perturbation vector u must have the same dimension as the state x."
                 )
             self.r += (self.r * (self.d - self.r**2)) * self.dt - u[1]
-            self.r = np.fmax(self.r, 0.1)
+            self.r = np.fmax(self.r, 0.01)
             self.theta += (self.w) * self.dt + u[0]
 
             if self.Q is None:
