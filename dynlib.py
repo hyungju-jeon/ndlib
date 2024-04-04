@@ -21,7 +21,10 @@ class AbstractDynamicalSystemNumpy:
         self.dt = dt
         self.x = x0
         self.y = None
-        self.n = x0.shape[0]
+        if isinstance(x0, (int, float)):
+            self.n = 1
+        else:
+            self.n = x0.shape[0]
         self.has_obs = False
 
     def set_state_dynamics(self):
