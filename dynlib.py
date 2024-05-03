@@ -252,8 +252,8 @@ class LimitCircleNumpy(AbstractDynamicalSystemNumpy):
                 raise ValueError(
                     "Perturbation vector u must have the same dimension as the state x."
                 )
-            self.r += (self.r * (self.d - self.r**2)) * self.dt - u[1]
-            self.r = np.fmax(self.r, 0.01)
+            self.r += ((self.r - self.d) ** 2 * (self.d - self.r)) * self.dt - u[1]
+            self.r = np.fmax(self.r, 0.05)
             self.theta += (self.w) * self.dt + u[0]
 
             if self.Q is None:
